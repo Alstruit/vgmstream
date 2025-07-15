@@ -1,6 +1,26 @@
 #include "meta.h"
 #include "../coding/coding.h"
 
+#define get_id32be(s) (\
+(uint32_t)((s)[0]) << 24 | \
+(uint32_t)((s)[1]) << 16 | \
+(uint32_t)((s)[2]) << 8  | \
+(uint32_t)((s)[3])       \
+)
+
+typedef struct {
+    uint32_t id;
+    uint32_t magic_id;
+    const char* extension;
+    VGMSTREAM* (*init_vgmstream)(STREAMFILE*);
+} srcd_container_t;
+
+static const srcd_container_t srcd_containers[] = {
+    {get_id32be("wav "), get_id32be("RIFF"), "wav",  init_vgmstream_riff},
+    {get_id32be("ogg "), get_id32be("OggS"), "ogg",  init_vgmstream_ogg_vorbis}
+};
+#undef get_id32be
+
 /* srcd - Capcom RE Engine */
 VGMSTREAM* init_vgmstream_srcd(STREAMFILE* sf) {
     VGMSTREAM* vgmstream = NULL;
@@ -8,9 +28,6 @@ VGMSTREAM* init_vgmstream_srcd(STREAMFILE* sf) {
     off_t start_offset = 0;
     int loop_flag = 0;
     int32_t loop_start_sample = 0, loop_end_sample = 0;
-    uint32_t container_type;
-    const char* extension = NULL;
-    VGMSTREAM* (*init_vgmstream_function)(STREAMFILE*) = NULL;
 
     if (!check_extensions(sf, "srcd,asrc,14,21,26,31"))
         goto fail;
@@ -27,11 +44,8 @@ VGMSTREAM* init_vgmstream_srcd(STREAMFILE* sf) {
             ver = VERSION_31;
         }
         //v21 - CAS2
-        else if (read_u32le(0x41, sf) == 0x49) {
-            ver = VERSION_21_26;
-        }
         //v26 - GTPD
-        else if (read_u32le(0x46, sf) == 0x4E) {
+        else if (read_u32le(0x41, sf) == 0x49 || read_u32le(0x46, sf) == 0x4E) {
             ver = VERSION_21_26;
         }
         //v14 - CAS
@@ -65,49 +79,43 @@ VGMSTREAM* init_vgmstream_srcd(STREAMFILE* sf) {
         }
     }
 
-    container_type = read_u32be(0x0C, sf);
+    /* Find container info from the table */
+    const srcd_container_t* container = NULL;
+    uint32_t container_type_id = read_u32be(0x0C, sf);
+    for (int i = 0; i < (sizeof(srcd_containers) / sizeof(srcd_container_t)); i++) {
+        if (srcd_containers[i].id == container_type_id) {
+            container = &srcd_containers[i];
+            break;
+        }
+    }
+
+    if (!container) {
+        VGM_LOG("SRCD: Unrecognized container type 0x%08X\n", container_type_id);
+        goto fail;
+    }
+
     {
         const off_t scan_start = 0x40;
         const size_t scan_size = 0x100; //Should be small
-        off_t current_offset;
-        uint32_t magic_to_find = 0;
+        off_t offset;
+        bool found = false;
 
-        if (container_type == get_id32be("wav ")) {
-            magic_to_find = get_id32be("RIFF");
-        } else if (container_type == get_id32be("ogg ")) {
-            magic_to_find = get_id32be("OggS");
-        }
-
-        if (magic_to_find) {
-            for (current_offset = scan_start; current_offset < scan_start + scan_size; current_offset++) {
-                if (read_u32be(current_offset, sf) == magic_to_find) {
-                    start_offset = current_offset;
-                    break;
-                }
+        for (offset = scan_start; offset < scan_start + scan_size; offset++) {
+            if (read_u32be(offset, sf) == container->magic_id) {
+                start_offset = offset;
+                found = true;
+                break;
             }
         }
+
+        if (!found)
+            goto fail;
     }
 
-    if (start_offset == 0)
-        goto fail;
-
-
-    /* Select the appropriate init function and extension based on container type */
-    if (container_type == get_id32be("wav ")) {
-        extension = "wav";
-        init_vgmstream_function = init_vgmstream_riff;
-    } else if (container_type == get_id32be("ogg ")) {
-        extension = "ogg";
-        init_vgmstream_function = init_vgmstream_ogg_vorbis;
-    } else {
-        VGM_LOG("SRCD: Codec not recognized");
-        goto fail;
-    }
-
-    subfile = setup_subfile_streamfile(sf, start_offset, get_streamfile_size(sf) - start_offset, extension);
+    subfile = setup_subfile_streamfile(sf, start_offset, get_streamfile_size(sf) - start_offset, container->extension);
     if (!subfile) goto fail;
 
-    vgmstream = init_vgmstream_function(subfile);
+    vgmstream = container->init_vgmstream(subfile);
     if (!vgmstream) goto fail;
 
     vgmstream->meta_type = meta_SRCD;
