@@ -1,0 +1,48 @@
+name: CI Motherboard
+
+on:
+  push:
+    branches: [ master ]
+    # The Safe Denylist: CI will run on EVERYTHING except these
+    paths-ignore:
+      - 'doc/**'          # All documentation (BUILD.md, FORMATS.md, etc.)
+      - '**.md'           # Root README.md, SECURITY.md
+      - 'COPYING'         # License file
+      - '.gitignore'      # Git config
+      - 'cli/tools/**'    # Python auxiliary scripts (txtp_dumper.py, etc.)
+      
+  pull_request:
+    paths-ignore:
+      - 'doc/**'
+      - '**.md'
+      - 'COPYING'
+      - '.gitignore'
+      - 'cli/tools/**'
+
+  workflow_dispatch:
+
+# Cancel redundant builds if a new commit is pushed quickly
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # COMPONENT 1: LINUX
+  call-linux:
+    uses: ./.github/workflows/cmake-lx.yml
+    secrets: inherit
+
+  # COMPONENT 2: WINDOWS
+  call-windows:
+    uses: ./.github/workflows/vs-win.yml
+    secrets: inherit
+
+  # COMPONENT 3: WASM
+  call-wasm:
+    uses: ./.github/workflows/cmake-wasm.yml
+    secrets: inherit
+    
+  # COMPONENT 4: MACOS
+  call-macos:
+    uses: ./.github/workflows/macos.yml
+    secrets: inherit
