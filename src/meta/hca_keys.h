@@ -1676,6 +1676,9 @@ static const hcakey_info hcakey_list[] = {
     // Genso Suikoden STAR LEAP (Android)
     {310004001},                // 00000000127A4921
 
+    // Final Fantasy Resonance Demo (PC)
+    {39734930526541068},        // 008D2AB57335950C
+
 };
 
 #endif

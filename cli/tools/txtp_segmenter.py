@@ -118,7 +118,11 @@ def main():
         name = get_txtp_name(args, file)
         if not name in txtps:
             txtps[name] = []
-        file = file.replace('\\', '/')
+
+        # normalize txtp paths except if full paths were used
+        if ':\\' not in file:
+            file = file.replace('\\', '/')
+
         txtps[name].append(file)
 
 

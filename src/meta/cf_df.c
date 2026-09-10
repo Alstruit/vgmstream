@@ -496,11 +496,12 @@ static VGMSTREAM* build_cf_df_v1_mov(STREAMFILE* sf, int containers,
     VGMSTREAM* vgmstream = NULL;
     df_bank_t bank = {0};
     int control = 0;
+    off_t file_size;
 
     if (!init_bank(&bank, containers, false))
         goto fail;
 
-    off_t file_size = get_streamfile_size(sf);
+    file_size = get_streamfile_size(sf);
     while (control < containers) {
         off_t pos = read_u32(DF_HEADER_SIZE + (off_t)control * 0x04, sf);
         if (pos <= 0 || pos + 0x08 > file_size)
